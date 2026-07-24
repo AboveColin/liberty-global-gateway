@@ -332,6 +332,45 @@ class WifiState:
 
 
 @dataclass
+class EventLogEntry:
+    """One entry from the cable-modem event log (``/cablemodem/eventlog``)."""
+
+    time: Optional[str]
+    priority: Optional[str]
+    message: Optional[str]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "EventLogEntry":
+        """Build from one ``eventlog`` entry."""
+        return cls(
+            time=payload.get("time"),
+            priority=payload.get("priority"),
+            message=payload.get("message"),
+            raw=payload or {},
+        )
+
+
+@dataclass
+class Registration:
+    """DOCSIS registration summary (``/cablemodem/registration``)."""
+
+    registration_complete: Optional[bool]
+    downstream_locked: Optional[bool]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "Registration":
+        """Build from a ``/cablemodem/registration`` payload."""
+        reg = (payload or {}).get("registration") or {}
+        return cls(
+            registration_complete=_bool(reg.get("registrationComplete")),
+            downstream_locked=_bool(reg.get("downstreamLocked")),
+            raw=payload or {},
+        )
+
+
+@dataclass
 class Host:
     """A device seen by the router's DHCP/association table (``/network/hosts``)."""
 

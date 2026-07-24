@@ -79,6 +79,34 @@ class AuthManager:
         self._user_id = None
         self._obtained_at = None
 
+    async def async_logout(self) -> bool:
+        """Release the router's single session by deleting the current token.
+
+        The gateway logs a client out with ``DELETE /user/<userId>/token/<token>``
+        (returns ``204``). Doing this frees the single login slot **immediately**
+        instead of waiting for the idle timeout, so the web UI and other clients
+        can log in again right away. Best effort: the local token is always
+        cleared, even if the network call fails.
+
+        Returns ``True`` if the logout request reached the router successfully.
+        """
+        token, user_id = self._token, self._user_id
+        if not token or user_id is None:
+            self.clear()
+            return False
+        ok = False
+        try:
+            status, _ = await self._request(
+                "DELETE", f"/user/{user_id}/token/{token}", auth=True
+            )
+            ok = status in (200, 202, 204)
+        except CompalNetworkError:
+            # The slot will still idle-expire; nothing else to do.
+            ok = False
+        finally:
+            self.clear()
+        return ok
+
     async def async_get_lockout(self) -> tuple[int, int]:
         """Return ``(contiguous_failures, lockout_seconds)`` from the router.
 

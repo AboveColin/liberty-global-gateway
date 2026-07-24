@@ -13,7 +13,7 @@ This library is an asynchronous Python wrapper around that API. It reads system/
 
 ## Features
 
-- **Single-session handling:** the F3896LG allows exactly one authenticated session and has **no logout endpoint**. The client logs in, reads in a burst, and drops the token; the router frees the slot once the token idles out. A login attempt while another session is active raises `CompalSessionBusyError` instead of failing confusingly.
+- **Single-session handling:** the F3896LG allows exactly one authenticated session. Call `await client.logout()` when done — it sends the gateway's logout (`DELETE /user/<id>/token/<token>`) and frees the single slot **immediately**, so the web UI and other clients can log straight back in. `client.close()` logs out for you. A login attempt while another session is active raises `CompalSessionBusyError` instead of failing confusingly; if a client exits without logging out, the router still releases the slot on its own after ~15 minutes.
 - **Lockout-aware login:** the password endpoint locks out after a handful of contiguous wrong attempts. Before each login the client reads the unauthenticated login status and refuses to try while a lockout is active, so it never makes things worse.
 - **DOCSIS diagnostics:** downstream power/SNR/modulation/error counters per channel, upstream power/modulation, and provisioned service-flow rates.
 - **Connected devices:** the DHCP/association table with hostname, IP, interface, Wi-Fi band and RSSI — handy for presence detection.
@@ -37,7 +37,7 @@ pip install -r requirements.txt
 
 The gateway uses a **password-only** login (no username): `POST /rest/v1/user/login` with `{"password": "..."}` returns a bearer token that is valid for a single session. The admin certificate is self-signed, so TLS verification is off by default.
 
-> **One session at a time.** Close the router's web UI before using this library, or expect a `CompalSessionBusyError`. There is no logout call — the router releases the session on its own roughly 15 minutes after the last request.
+> **One session at a time.** Close the router's web UI before using this library, or expect a `CompalSessionBusyError`. Call `await client.logout()` (or `client.close()`) when finished to free the slot right away; otherwise the router releases the session on its own roughly 15 minutes after the last request.
 
 ## Usage
 

@@ -19,13 +19,17 @@ DEFAULT_PORT = 443
 #: Root of the REST API.
 API_PATH = "/rest/v1"
 
-#: Per-request timeout (seconds). The connected-hosts endpoint in particular
-#: can be slow to assemble, so this is generous.
+#: Per-request timeout (seconds) for the ordinary, fast endpoints.
 DEFAULT_TIMEOUT = 20
+
+#: The ``/network/hosts`` table is assembled on demand and, on a busy LAN with
+#: dozens of clients, routinely takes longer than :data:`DEFAULT_TIMEOUT`. It
+#: gets its own, more generous timeout so a slow host list does not fail a poll.
+HOSTS_TIMEOUT = 60
 
 #: A single browser-style client identifier. The router does not check it, but
 #: sending one keeps the request shape close to the real web UI.
-USER_AGENT = "compalf3896lg/1.0.0 (+https://github.com/AboveColin/compalf3896lg)"
+USER_AGENT = "compalf3896lg/1.1.0 (+https://github.com/AboveColin/compalf3896lg)"
 
 # -- router error codes (the ``errorCode`` field in error bodies) -------------
 
@@ -40,11 +44,10 @@ ERR_METHOD_NOT_ALLOWED = 10
 
 # -- session behaviour --------------------------------------------------------
 
-#: The router has **no logout endpoint**. An idle session is released by the
-#: box roughly this many seconds after the last authenticated request. Callers
-#: that poll should either poll no more often than this or expect a
-#: :class:`~compalf3896lg.exceptions.CompalSessionBusyError` while a previous
-#: session is still held.
+#: An idle session is released by the box roughly this many seconds after the
+#: last authenticated request. Prefer calling :meth:`CompalClient.logout`
+#: (``DELETE /user/<id>/token/<token>``) to free the single slot immediately;
+#: this TTL is only the fallback for when a client exits without logging out.
 TOKEN_TTL = 900
 
 #: The login endpoint locks out after this many *contiguous* failed password

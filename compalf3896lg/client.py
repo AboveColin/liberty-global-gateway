@@ -39,6 +39,7 @@ from .constants import (
     DEFAULT_SCHEME,
     DEFAULT_TIMEOUT,
     ERR_SESSION_BUSY,
+    HOSTS_TIMEOUT,
     USER_AGENT,
 )
 from .exceptions import (
@@ -50,10 +51,12 @@ from .exceptions import (
 from .models import (
     CableModemState,
     DownstreamChannel,
+    EventLogEntry,
     Host,
     Ipv6Info,
     LanInfo,
     ModemMode,
+    Registration,
     ServiceFlow,
     SystemInfo,
     UpstreamChannel,
@@ -126,9 +129,18 @@ class CompalClient:
         """Return ``(contiguous_failures, lockout_seconds)`` without logging in."""
         return await self._auth.async_get_lockout()
 
+    async def logout(self) -> bool:
+        """Release the router's single login slot immediately.
+
+        Sends the gateway's logout (``DELETE /user/<id>/token/<token>``) so the
+        one session becomes free again without waiting for the idle timeout.
+        Safe to call when not logged in. See :meth:`AuthManager.async_logout`.
+        """
+        return await self._auth.async_logout()
+
     async def close(self) -> None:
-        """Drop the token and close the session if this client created it."""
-        self._auth.clear()
+        """Log out (freeing the slot) and close the session if we created it."""
+        await self._auth.async_logout()
         if self._owns_session and not self._session.closed:
             await self._session.close()
 
@@ -140,17 +152,17 @@ class CompalClient:
 
     # -- low level ------------------------------------------------------------
 
-    async def _get(self, path: str) -> Any:
+    async def _get(self, path: str, *, timeout: float | None = None) -> Any:
         """Authenticated GET with a single re-login retry on ``401``."""
         if not self._auth.token:
             await self.login()
 
-        status, data = await self._raw("GET", path)
+        status, data = await self._raw("GET", path, timeout=timeout)
         if status == 401:
             # Token expired mid-session; the slot is now free, so re-login once.
             self._auth.clear()
             await self._auth.async_login()
-            status, data = await self._raw("GET", path)
+            status, data = await self._raw("GET", path, timeout=timeout)
 
         if status == 503 or (isinstance(data, dict) and data.get("errorCode") == ERR_SESSION_BUSY):
             raise CompalSessionBusyError(f"{path}: router session slot is busy")
@@ -170,7 +182,8 @@ class CompalClient:
             raise CompalAPIError(f"{path} failed", status_code=status, error_code=error_code)
         return data
 
-    async def _raw(self, method: str, path: str, json: Any = None):
+    async def _raw(self, method: str, path: str, json: Any = None,
+                   timeout: float | None = None):
         headers = {"User-Agent": USER_AGENT, **self._auth.auth_header()}
         try:
             async with self._session.request(
@@ -179,7 +192,7 @@ class CompalClient:
                 headers=headers,
                 json=json,
                 ssl=self._ssl,
-                timeout=aiohttp.ClientTimeout(total=self._timeout),
+                timeout=aiohttp.ClientTimeout(total=timeout or self._timeout),
             ) as resp:
                 try:
                     body = await resp.json(content_type=None)
@@ -218,7 +231,9 @@ class CompalClient:
         are returned.
         """
         query = "?connectedOnly=true" if connected_only else ""
-        data = await self._get(f"/network/hosts{query}")
+        # The hosts table is assembled on demand and is markedly slower than the
+        # other endpoints, so give it a more generous timeout of its own.
+        data = await self._get(f"/network/hosts{query}", timeout=HOSTS_TIMEOUT)
         hosts = ((data or {}).get("hosts") or {}).get("hosts") or []
         return [Host.from_api(h) for h in hosts]
 
@@ -245,6 +260,16 @@ class CompalClient:
         data = await self._get("/cablemodem/serviceflows")
         flows = (data or {}).get("serviceFlows") or []
         return [ServiceFlow.from_api(f) for f in flows]
+
+    async def get_registration(self) -> Registration:
+        """DOCSIS registration summary (complete / downstream locked)."""
+        return Registration.from_api(await self._get("/cablemodem/registration"))
+
+    async def get_event_log(self) -> list[EventLogEntry]:
+        """Cable-modem event log, newest entry first."""
+        data = await self._get("/cablemodem/eventlog")
+        entries = (data or {}).get("eventlog") or []
+        return [EventLogEntry.from_api(e) for e in entries]
 
     # -- wifi -----------------------------------------------------------------
 
