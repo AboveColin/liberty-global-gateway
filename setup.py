@@ -6,7 +6,7 @@ from setuptools import setup
 
 setup(
     name="compalf3896lg",
-    version="1.1.0",
+    version="1.2.0",
     description="An unofficial async Python client for the Compal F3896LG (Ziggo) cable gateway",
     author="AboveColin",
     author_email="colin@cdevries.dev",

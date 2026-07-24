@@ -38,21 +38,29 @@ from .exceptions import (
 )
 from .models import (
     CableModemState,
+    Dmz,
     DownstreamChannel,
     EventLogEntry,
+    Firewall,
+    GuestWifiConfig,
     Host,
     Ipv6Info,
     LanInfo,
     ModemMode,
+    MtaLine,
+    PortForwardRule,
+    Provisioning,
     Registration,
+    ReservedIp,
     ServiceFlow,
+    SoftwareUpdate,
     SystemInfo,
     UpstreamChannel,
     WifiConfig,
     WifiState,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 __all__ = [
     # Main client
@@ -80,6 +88,14 @@ __all__ = [
     "Host",
     "EventLogEntry",
     "Registration",
+    "Provisioning",
+    "SoftwareUpdate",
+    "Dmz",
+    "Firewall",
+    "GuestWifiConfig",
+    "PortForwardRule",
+    "ReservedIp",
+    "MtaLine",
     # Constants
     "API_PATH",
     "DEFAULT_HOST",

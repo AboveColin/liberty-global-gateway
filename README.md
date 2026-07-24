@@ -15,7 +15,9 @@ This library is an asynchronous Python wrapper around that API. It reads system/
 
 - **Single-session handling:** the F3896LG allows exactly one authenticated session. Call `await client.logout()` when done — it sends the gateway's logout (`DELETE /user/<id>/token/<token>`) and frees the single slot **immediately**, so the web UI and other clients can log straight back in. `client.close()` logs out for you. A login attempt while another session is active raises `CompalSessionBusyError` instead of failing confusingly; if a client exits without logging out, the router still releases the slot on its own after ~15 minutes.
 - **Lockout-aware login:** the password endpoint locks out after a handful of contiguous wrong attempts. Before each login the client reads the unauthenticated login status and refuses to try while a lockout is active, so it never makes things worse.
-- **DOCSIS diagnostics:** downstream power/SNR/modulation/error counters per channel, upstream power/modulation, and provisioned service-flow rates.
+- **DOCSIS diagnostics:** downstream power/SNR/modulation/error counters per channel, upstream power/modulation, provisioned service-flow rates, T3/T4 timeouts, the cable-modem **event log** and DOCSIS **registration** state.
+- **WAN / provisioning:** the public IPv4/IPv6 address, gateway, DNS servers and lease times (`get_provisioning`), plus firmware **software-update** status.
+- **Network features:** UPnP, DMZ, IPv4/IPv6 firewall, port-forwarding rules, static DHCP reservations, guest Wi-Fi (SSID only — never the PSK), Smart Wi-Fi/band-steering and telephony (MTA) line status.
 - **Connected devices:** the DHCP/association table with hostname, IP, interface, Wi-Fi band and RSSI — handy for presence detection.
 - **Typed models:** every response becomes a dataclass; the Wi-Fi PSK is deliberately kept out of the modelled fields (it stays in `.raw`) so it isn't surfaced by accident.
 
@@ -100,7 +102,7 @@ A companion Home Assistant integration built on this library lives at [HA-Compal
 ## Notes
 
 - **TLS:** the admin cert is self-signed; verification is off by default. Pass `verify_ssl=True` if you have installed the cert.
-- **`/network/ipv4/info`** returns the **LAN** address/subnet, not the WAN IP — the stock firmware does not expose the public WAN address over this API.
+- **`/network/ipv4/info`** returns the **LAN** address/subnet; for the public WAN address use `get_provisioning()` (`/system/gateway/provisioning`).
 - **Errors:** the package raises `CompalAuthError` (wrong password), `CompalLockoutError` (login locked out), `CompalSessionBusyError` (another session active), `CompalAPIError` (bad response, carries `status_code`/`error_code`), `CompalNetworkError` (timeout/connection/TLS) and `CompalValidationError` (bad arguments) — all subclasses of `CompalError`.
 
 ## License

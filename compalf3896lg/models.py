@@ -371,6 +371,164 @@ class Registration:
 
 
 @dataclass
+class Provisioning:
+    """WAN/provisioning info (``/system/gateway/provisioning``)."""
+
+    mode: Optional[str]
+    wan_mac: Optional[str]
+    ipv4_address: Optional[str]
+    ipv4_gateway: Optional[str]
+    ipv4_dns: list[str] = field(default_factory=list)
+    ipv4_lease_time: Optional[int] = None
+    ipv6_global_address: Optional[str] = None
+    ipv6_gateway: Optional[str] = None
+    ipv6_dns: list[str] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "Provisioning":
+        p = (payload or {}).get("provisioning") or {}
+        v4 = p.get("ipv4") or {}
+        v6 = p.get("ipv6") or {}
+        return cls(
+            mode=p.get("mode"),
+            wan_mac=p.get("macAddress"),
+            ipv4_address=v4.get("address"),
+            ipv4_gateway=v4.get("defaultGateway"),
+            ipv4_dns=list(v4.get("dnsServers") or []),
+            ipv4_lease_time=_int(v4.get("leaseTime")),
+            ipv6_global_address=v6.get("globalAddress"),
+            ipv6_gateway=v6.get("defaultGateway"),
+            ipv6_dns=list(v6.get("dnsServers") or []),
+            raw=payload or {},
+        )
+
+
+@dataclass
+class SoftwareUpdate:
+    """Firmware update status (``/system/softwareupdate``)."""
+
+    status: Optional[str]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "SoftwareUpdate":
+        return cls(status=((payload or {}).get("softwareUpdate") or {}).get("status"),
+                   raw=payload or {})
+
+
+@dataclass
+class Dmz:
+    """DMZ config (``/network/ipv4/dmz``)."""
+
+    enabled: Optional[bool]
+    internal_ip: Optional[str]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "Dmz":
+        d = (payload or {}).get("dmz") or {}
+        return cls(enabled=_bool(d.get("enable")),
+                   internal_ip=d.get("internalIp") or d.get("internalIpAddress"),
+                   raw=payload or {})
+
+
+@dataclass
+class Firewall:
+    """Firewall config (``/network/ipv4/firewall`` or ipv6)."""
+
+    enabled: Optional[bool]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "Firewall":
+        f = (payload or {}).get("firewall") or {}
+        # Firmware exposes this variously; treat a disabled/off security level as off.
+        enabled = f.get("enable")
+        if enabled is None and "securityLevel" in f:
+            enabled = str(f.get("securityLevel")).lower() not in ("off", "disabled", "none")
+        return cls(enabled=_bool(enabled) if enabled is not None else None,
+                   raw=payload or {})
+
+
+@dataclass
+class GuestWifiConfig:
+    """Guest Wi-Fi config for one band (``/wifi/<band>/guest/config``).
+
+    The passphrase is intentionally **not** captured as a field; it stays only
+    inside ``raw`` so callers that surface guest Wi-Fi never leak the key.
+    """
+
+    band: str
+    enabled: Optional[bool]
+    ssid: Optional[str]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, band: str, payload: dict[str, Any]) -> "GuestWifiConfig":
+        cfg = (payload or {}).get("config") or {}
+        ssid = (cfg.get("ssid") or {}).get("ssid")
+        return cls(band=band, enabled=_bool(cfg.get("enable")), ssid=ssid,
+                   raw=payload or {})
+
+
+@dataclass
+class PortForwardRule:
+    """One port-forwarding rule (``/network/portforwarding``)."""
+
+    id: Optional[int]
+    enabled: Optional[bool]
+    protocol: Optional[str]
+    external_start_port: Optional[int]
+    external_end_port: Optional[int]
+    local_address: Optional[str]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "PortForwardRule":
+        r = (payload or {}).get("rule") or {}
+        return cls(
+            id=_int(payload.get("id")),
+            enabled=_bool(r.get("enable")),
+            protocol=r.get("protocol"),
+            external_start_port=_int(r.get("externalStartPort")),
+            external_end_port=_int(r.get("externalEndPort")),
+            local_address=r.get("localAddress"),
+            raw=payload or {},
+        )
+
+
+@dataclass
+class ReservedIp:
+    """A static DHCP reservation (``/network/reservedipaddresses``)."""
+
+    mac_address: Optional[str]
+    ip_address: Optional[str]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "ReservedIp":
+        return cls(mac_address=payload.get("macAddress"),
+                   ip_address=payload.get("ipAddress"), raw=payload or {})
+
+
+@dataclass
+class MtaLine:
+    """A telephony (MTA) line (``/mta/lines``)."""
+
+    id: Optional[int]
+    enabled: Optional[bool]
+    operational: Optional[bool]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "MtaLine":
+        line = (payload or {}).get("line") or {}
+        return cls(id=_int(payload.get("id")), enabled=_bool(line.get("enable")),
+                   operational=_bool(line.get("operational")), raw=payload or {})
+
+
+@dataclass
 class Host:
     """A device seen by the router's DHCP/association table (``/network/hosts``)."""
 

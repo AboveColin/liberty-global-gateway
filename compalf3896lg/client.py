@@ -50,19 +50,38 @@ from .exceptions import (
 )
 from .models import (
     CableModemState,
+    Dmz,
     DownstreamChannel,
     EventLogEntry,
+    Firewall,
+    GuestWifiConfig,
     Host,
     Ipv6Info,
     LanInfo,
     ModemMode,
+    MtaLine,
+    PortForwardRule,
+    Provisioning,
     Registration,
+    ReservedIp,
     ServiceFlow,
+    SoftwareUpdate,
     SystemInfo,
     UpstreamChannel,
     WifiConfig,
     WifiState,
 )
+
+
+def _as_bool(value: Any) -> Optional[bool]:
+    """Coerce an API truthy/falsey value to bool, preserving None."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on", "enabled")
+    return bool(value)
 
 
 class CompalClient:
@@ -297,11 +316,72 @@ class CompalClient:
             BAND_5G: await self.get_wifi_state(BAND_5G),
         }
 
+    async def get_guest_wifi_config(self, band: str) -> GuestWifiConfig:
+        """Guest Wi-Fi config for one band (SSID + enabled; no passphrase)."""
+        band = self._check_band(band)
+        return GuestWifiConfig.from_api(
+            band, await self._get(f"/wifi/{band}/guest/config"))
+
+    async def get_guest_wifi_configs(self) -> dict[str, GuestWifiConfig]:
+        """Guest Wi-Fi config for both bands, keyed by band."""
+        return {
+            BAND_2G: await self.get_guest_wifi_config(BAND_2G),
+            BAND_5G: await self.get_guest_wifi_config(BAND_5G),
+        }
+
+    async def get_smart_wifi(self) -> Optional[bool]:
+        """Whether Smart Wi-Fi (band steering) is enabled."""
+        data = await self._get("/wifi/smartmode")
+        return _as_bool(((data or {}).get("smartmode") or {}).get("enable"))
+
     @staticmethod
     def _check_band(band: str) -> str:
         if band not in BANDS:
             raise CompalValidationError(f"band must be one of {BANDS}, got {band!r}")
         return band
+
+    # -- WAN / system ---------------------------------------------------------
+
+    async def get_provisioning(self) -> Provisioning:
+        """WAN/provisioning info: public IPv4/IPv6, gateway, DNS, lease times."""
+        return Provisioning.from_api(await self._get("/system/gateway/provisioning"))
+
+    async def get_software_update(self) -> SoftwareUpdate:
+        """Firmware update status."""
+        return SoftwareUpdate.from_api(await self._get("/system/softwareupdate"))
+
+    # -- network features -----------------------------------------------------
+
+    async def get_upnp(self) -> Optional[bool]:
+        """Whether UPnP IGD is enabled."""
+        data = await self._get("/network/upnp")
+        return _as_bool(((data or {}).get("upnp") or {}).get("enable"))
+
+    async def get_dmz(self) -> Dmz:
+        """DMZ configuration (enabled + internal host)."""
+        return Dmz.from_api(await self._get("/network/ipv4/dmz"))
+
+    async def get_firewall(self, ip_version: str = "ipv4") -> Firewall:
+        """Firewall configuration for ``"ipv4"`` (default) or ``"ipv6"``."""
+        if ip_version not in ("ipv4", "ipv6"):
+            raise CompalValidationError("ip_version must be 'ipv4' or 'ipv6'")
+        return Firewall.from_api(await self._get(f"/network/{ip_version}/firewall"))
+
+    async def get_port_forwarding(self) -> list[PortForwardRule]:
+        """Configured port-forwarding rules."""
+        data = await self._get("/network/portforwarding")
+        rules = ((data or {}).get("portforwarding") or {}).get("rules") or []
+        return [PortForwardRule.from_api(r) for r in rules]
+
+    async def get_reserved_ips(self) -> list[ReservedIp]:
+        """Static DHCP reservations (MAC → IP)."""
+        data = await self._get("/network/reservedipaddresses")
+        return [ReservedIp.from_api(r) for r in ((data or {}).get("rules") or [])]
+
+    async def get_mta_lines(self) -> list[MtaLine]:
+        """Telephony (MTA) lines and whether each is operational."""
+        data = await self._get("/mta/lines")
+        return [MtaLine.from_api(x) for x in ((data or {}).get("lines") or [])]
 
     # -- actions --------------------------------------------------------------
 
