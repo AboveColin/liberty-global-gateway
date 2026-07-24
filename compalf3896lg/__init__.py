@@ -38,6 +38,7 @@ from .exceptions import (
 )
 from .models import (
     CableModemState,
+    DhcpServer,
     Dmz,
     DownstreamChannel,
     EventLogEntry,
@@ -46,6 +47,7 @@ from .models import (
     Host,
     Ipv6Info,
     LanInfo,
+    Led,
     ModemMode,
     MtaLine,
     PortForwardRule,
@@ -60,7 +62,7 @@ from .models import (
     WifiState,
 )
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 __all__ = [
     # Main client
@@ -96,6 +98,8 @@ __all__ = [
     "PortForwardRule",
     "ReservedIp",
     "MtaLine",
+    "Led",
+    "DhcpServer",
     # Constants
     "API_PATH",
     "DEFAULT_HOST",

@@ -50,12 +50,14 @@ from .exceptions import (
 )
 from .models import (
     CableModemState,
+    DhcpServer,
     Dmz,
     DownstreamChannel,
     EventLogEntry,
     Firewall,
     GuestWifiConfig,
     Host,
+    Led,
     Ipv6Info,
     LanInfo,
     ModemMode,
@@ -196,6 +198,16 @@ class CompalClient:
         if not self._auth.token:
             await self.login()
         status, data = await self._raw("POST", path, json=json)
+        if status >= 400:
+            error_code = data.get("errorCode") if isinstance(data, dict) else None
+            raise CompalAPIError(f"{path} failed", status_code=status, error_code=error_code)
+        return data
+
+    async def _put(self, path: str, json: Any = None) -> Any:
+        """Authenticated PUT (used to change settings)."""
+        if not self._auth.token:
+            await self.login()
+        status, data = await self._raw("PUT", path, json=json)
         if status >= 400:
             error_code = data.get("errorCode") if isinstance(data, dict) else None
             raise CompalAPIError(f"{path} failed", status_code=status, error_code=error_code)
@@ -382,6 +394,63 @@ class CompalClient:
         """Telephony (MTA) lines and whether each is operational."""
         data = await self._get("/mta/lines")
         return [MtaLine.from_api(x) for x in ((data or {}).get("lines") or [])]
+
+    async def get_dhcp(self, ip_version: str = "ipv4") -> DhcpServer:
+        """LAN DHCP server config for ``"ipv4"`` (default) or ``"ipv6"``."""
+        if ip_version not in ("ipv4", "ipv6"):
+            raise CompalValidationError("ip_version must be 'ipv4' or 'ipv6'")
+        return DhcpServer.from_api(await self._get(f"/network/{ip_version}/dhcp"))
+
+    async def get_led(self) -> Led:
+        """Front-panel LED brightness/auto settings."""
+        return Led.from_api(await self._get("/network/ledlight"))
+
+    async def get_wps_enabled(self, band: str) -> Optional[bool]:
+        """Whether WPS is enabled for a band."""
+        band = self._check_band(band)
+        data = await self._get(f"/wifi/{band}/wps/config")
+        return _as_bool(((data or {}).get("config") or {}).get("enable"))
+
+    async def get_mac_filters(self) -> list[dict]:
+        """MAC-filter rules (raw entries)."""
+        data = await self._get("/network/macfilters")
+        return list(((data or {}).get("macfilters") or {}).get("rules") or [])
+
+    async def get_port_triggers(self) -> list[dict]:
+        """Port-trigger rules (raw entries)."""
+        data = await self._get("/network/porttriggers")
+        return list(((data or {}).get("porttriggers") or {}).get("rules") or [])
+
+    async def get_ip_port_filters(self) -> list[dict]:
+        """IP/port-filter rules (IPv4 + IPv6 combined, raw entries)."""
+        data = await self._get("/network/ipportfilters")
+        f = (data or {}).get("ipportfilters") or {}
+        return list((f.get("ipv4") or {}).get("rules") or []) + \
+            list((f.get("ipv6") or {}).get("rules") or [])
+
+    # -- writes ---------------------------------------------------------------
+
+    async def set_upnp(self, enable: bool) -> None:
+        """Enable or disable UPnP IGD."""
+        await self._put("/network/upnp", {"upnp": {"enable": bool(enable)}})
+
+    async def set_led(self, *, brightness: Optional[int] = None,
+                      automode: Optional[bool] = None) -> None:
+        """Set the front-panel LED brightness (0-100) and/or auto mode.
+
+        Only the given fields change; the rest keep their current values. The
+        firmware expects string values, which this method handles.
+        """
+        current = await self.get_led()
+        new_bright = current.brightness if brightness is None else int(brightness)
+        new_auto = current.automode if automode is None else bool(automode)
+        if new_bright is not None:
+            new_bright = max(0, min(100, new_bright))
+        # Note: GET wraps this in {"value": {...}} but the PUT body is flat.
+        await self._put("/network/ledlight", {
+            "brightness": str(new_bright if new_bright is not None else 100),
+            "automode": "true" if new_auto else "false",
+        })
 
     # -- actions --------------------------------------------------------------
 

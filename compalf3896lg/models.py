@@ -383,6 +383,7 @@ class Provisioning:
     ipv6_global_address: Optional[str] = None
     ipv6_gateway: Optional[str] = None
     ipv6_dns: list[str] = field(default_factory=list)
+    dslite_enabled: Optional[bool] = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -400,6 +401,46 @@ class Provisioning:
             ipv6_global_address=v6.get("globalAddress"),
             ipv6_gateway=v6.get("defaultGateway"),
             ipv6_dns=list(v6.get("dnsServers") or []),
+            dslite_enabled=_bool((p.get("dsLite") or {}).get("enable")),
+            raw=payload or {},
+        )
+
+
+@dataclass
+class Led:
+    """Front-panel LED settings (``/network/ledlight``)."""
+
+    brightness: Optional[int]
+    automode: Optional[bool]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "Led":
+        v = (payload or {}).get("value") or {}
+        return cls(brightness=_int(v.get("brightness")),
+                   automode=_bool(v.get("automode")), raw=payload or {})
+
+
+@dataclass
+class DhcpServer:
+    """LAN DHCP server config (``/network/ipv4/dhcp``)."""
+
+    enabled: Optional[bool]
+    min_address: Optional[str]
+    max_address: Optional[str]
+    subnet_mask: Optional[str]
+    lease_time: Optional[int]
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "DhcpServer":
+        d = (payload or {}).get("dhcp") or {}
+        return cls(
+            enabled=_bool(d.get("enable")),
+            min_address=d.get("minAddress"),
+            max_address=d.get("maxAddress"),
+            subnet_mask=d.get("subnetMask"),
+            lease_time=_int(d.get("leaseTime")),
             raw=payload or {},
         )
 

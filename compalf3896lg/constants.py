@@ -29,7 +29,7 @@ HOSTS_TIMEOUT = 60
 
 #: A single browser-style client identifier. The router does not check it, but
 #: sending one keeps the request shape close to the real web UI.
-USER_AGENT = "compalf3896lg/1.2.0 (+https://github.com/AboveColin/compalf3896lg)"
+USER_AGENT = "compalf3896lg/1.3.0 (+https://github.com/AboveColin/compalf3896lg)"
 
 # -- router error codes (the ``errorCode`` field in error bodies) -------------
 
