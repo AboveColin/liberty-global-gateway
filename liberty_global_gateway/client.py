@@ -1,13 +1,19 @@
 """
-High-level async client for the Compal F3896LG (Ziggo) cable gateway.
+High-level async client for Liberty Global cable gateways.
+
+These are the DOCSIS 3.0/3.1 gateways Liberty Global and its sister operators
+ship to subscribers -- Ziggo's "SmartWifi modem", UPC's "Connect Box", Virgin
+Media's "Hub", and the Sunrise/Yallo/Unitymedia equivalents. They all run the
+same LG-RDK firmware and expose the same ``/rest/v1`` admin API. See
+:data:`~liberty_global_gateway.constants.KNOWN_MODELS`.
 
 Example::
 
     import asyncio
-    from compalf3896lg import CompalClient
+    from liberty_global_gateway import LibertyGatewayClient
 
     async def main():
-        async with CompalClient("192.168.178.1", "admin-password") as client:
+        async with LibertyGatewayClient("192.168.178.1", "admin-password") as client:
             await client.login()
             print((await client.get_system_info()).software_version)
             for ch in await client.get_downstream_channels():
@@ -15,11 +21,15 @@ Example::
 
     asyncio.run(main())
 
-Because the router allows a single session and has no logout endpoint, the
-client establishes one session per :meth:`login`, reuses it for a burst of
-reads, and simply drops the token on :meth:`close`. The router releases the
-slot on its own once the token idles past
-:data:`~compalf3896lg.constants.TOKEN_TTL`.
+The router allows a single authenticated session at a time. The client
+establishes one session per :meth:`login`, reuses it for a burst of reads, and
+releases the slot immediately on :meth:`logout` / :meth:`close` via
+``DELETE /user/<id>/token/<token>`` -- so the web UI and other clients can log
+in again right away, without waiting out
+:data:`~liberty_global_gateway.constants.TOKEN_TTL`.
+
+A small part of the API needs no credentials at all: see :func:`probe`, which
+identifies a gateway from ``/rest/v1/system/localization`` alone.
 """
 
 from __future__ import annotations
@@ -40,13 +50,15 @@ from .constants import (
     DEFAULT_TIMEOUT,
     ERR_SESSION_BUSY,
     HOSTS_TIMEOUT,
+    LOCALIZATION_PATH,
+    PROBE_TIMEOUT,
     USER_AGENT,
 )
 from .exceptions import (
-    CompalAPIError,
-    CompalNetworkError,
-    CompalSessionBusyError,
-    CompalValidationError,
+    GatewayAPIError,
+    GatewayNetworkError,
+    GatewaySessionBusyError,
+    GatewayValidationError,
 )
 from .models import (
     CableModemState,
@@ -60,6 +72,7 @@ from .models import (
     Led,
     Ipv6Info,
     LanInfo,
+    Localization,
     ModemMode,
     MtaLine,
     PortForwardRule,
@@ -86,8 +99,63 @@ def _as_bool(value: Any) -> Optional[bool]:
     return bool(value)
 
 
-class CompalClient:
-    """High-level client for a single Compal F3896LG gateway."""
+async def probe(
+    host: str,
+    *,
+    session: Optional[aiohttp.ClientSession] = None,
+    port: int = DEFAULT_PORT,
+    scheme: str = DEFAULT_SCHEME,
+    verify_ssl: bool = False,
+    timeout: float = PROBE_TIMEOUT,
+) -> Optional[Localization]:
+    """Identify a Liberty Global gateway at ``host`` without credentials.
+
+    ``/rest/v1/system/localization`` is served unauthenticated, so this can
+    check whether an arbitrary address is one of these gateways -- and which
+    model and operator it is -- before prompting anyone for a password.
+
+    Returns the parsed :class:`~liberty_global_gateway.models.Localization` on
+    success, or ``None`` if the host is unreachable, is not a gateway, or
+    answers with something unrecognisable. It never raises for an ordinary
+    "that isn't a gateway" outcome, which keeps discovery call sites simple.
+    """
+    if not host:
+        raise GatewayValidationError("host is required")
+
+    own_session = session is None
+    session = session or aiohttp.ClientSession()
+    url = f"{scheme}://{host}:{port}{API_PATH}{LOCALIZATION_PATH}"
+    try:
+        async with session.get(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            ssl=None if verify_ssl else False,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as resp:
+            if resp.status != 200:
+                return None
+            try:
+                body = await resp.json(content_type=None)
+            except (aiohttp.ContentTypeError, ValueError):
+                return None
+    except (asyncio.TimeoutError, aiohttp.ClientError, OSError):
+        return None
+    finally:
+        if own_session:
+            await session.close()
+
+    if not isinstance(body, dict) or "localization" not in body:
+        return None
+    localization = Localization.from_api(body)
+    # A gateway always reports at least a model; anything else is some other
+    # device that happens to answer on this path.
+    if not localization.model_name:
+        return None
+    return localization
+
+
+class LibertyGatewayClient:
+    """High-level client for a single Liberty Global cable gateway."""
 
     def __init__(
         self,
@@ -101,9 +169,9 @@ class CompalClient:
         timeout: int = DEFAULT_TIMEOUT,
     ) -> None:
         if not host:
-            raise CompalValidationError("host is required")
+            raise GatewayValidationError("host is required")
         if not password:
-            raise CompalValidationError("password is required")
+            raise GatewayValidationError("password is required")
         self._host = host
         self._base_url = f"{scheme}://{host}:{port}"
         self._timeout = timeout
@@ -128,7 +196,7 @@ class CompalClient:
         *,
         session: Optional[aiohttp.ClientSession] = None,
         **kwargs: Any,
-    ) -> "CompalClient":
+    ) -> "LibertyGatewayClient":
         """Alias for the constructor, mirroring the sibling ``basicfit`` client."""
         return cls(host, password, session=session, **kwargs)
 
@@ -165,7 +233,7 @@ class CompalClient:
         if self._owns_session and not self._session.closed:
             await self._session.close()
 
-    async def __aenter__(self) -> "CompalClient":
+    async def __aenter__(self) -> "LibertyGatewayClient":
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -186,11 +254,11 @@ class CompalClient:
             status, data = await self._raw("GET", path, timeout=timeout)
 
         if status == 503 or (isinstance(data, dict) and data.get("errorCode") == ERR_SESSION_BUSY):
-            raise CompalSessionBusyError(f"{path}: router session slot is busy")
+            raise GatewaySessionBusyError(f"{path}: router session slot is busy")
         if status >= 400:
             message = data.get("message") if isinstance(data, dict) else None
             error_code = data.get("errorCode") if isinstance(data, dict) else None
-            raise CompalAPIError(message or f"{path} failed", status_code=status, error_code=error_code)
+            raise GatewayAPIError(message or f"{path} failed", status_code=status, error_code=error_code)
         return data
 
     async def _post(self, path: str, json: Any = None) -> Any:
@@ -200,7 +268,7 @@ class CompalClient:
         status, data = await self._raw("POST", path, json=json)
         if status >= 400:
             error_code = data.get("errorCode") if isinstance(data, dict) else None
-            raise CompalAPIError(f"{path} failed", status_code=status, error_code=error_code)
+            raise GatewayAPIError(f"{path} failed", status_code=status, error_code=error_code)
         return data
 
     async def _put(self, path: str, json: Any = None) -> Any:
@@ -210,7 +278,7 @@ class CompalClient:
         status, data = await self._raw("PUT", path, json=json)
         if status >= 400:
             error_code = data.get("errorCode") if isinstance(data, dict) else None
-            raise CompalAPIError(f"{path} failed", status_code=status, error_code=error_code)
+            raise GatewayAPIError(f"{path} failed", status_code=status, error_code=error_code)
         return data
 
     async def _raw(self, method: str, path: str, json: Any = None,
@@ -231,11 +299,19 @@ class CompalClient:
                     body = None
                 return resp.status, body
         except asyncio.TimeoutError as err:
-            raise CompalNetworkError(f"request to {path} timed out") from err
+            raise GatewayNetworkError(f"request to {path} timed out") from err
         except aiohttp.ClientError as err:
-            raise CompalNetworkError(f"request to {path} failed: {err}") from err
+            raise GatewayNetworkError(f"request to {path} failed: {err}") from err
 
     # -- system ---------------------------------------------------------------
+
+    async def get_localization(self) -> Localization:
+        """Operator skin, product name and model (``/system/localization``).
+
+        The endpoint itself needs no authentication -- see the module-level
+        :func:`probe` for the credential-free version used by discovery.
+        """
+        return Localization.from_api(await self._get(LOCALIZATION_PATH))
 
     async def get_system_info(self) -> SystemInfo:
         """Model, firmware and hardware revision."""
@@ -349,7 +425,7 @@ class CompalClient:
     @staticmethod
     def _check_band(band: str) -> str:
         if band not in BANDS:
-            raise CompalValidationError(f"band must be one of {BANDS}, got {band!r}")
+            raise GatewayValidationError(f"band must be one of {BANDS}, got {band!r}")
         return band
 
     # -- WAN / system ---------------------------------------------------------
@@ -376,7 +452,7 @@ class CompalClient:
     async def get_firewall(self, ip_version: str = "ipv4") -> Firewall:
         """Firewall configuration for ``"ipv4"`` (default) or ``"ipv6"``."""
         if ip_version not in ("ipv4", "ipv6"):
-            raise CompalValidationError("ip_version must be 'ipv4' or 'ipv6'")
+            raise GatewayValidationError("ip_version must be 'ipv4' or 'ipv6'")
         return Firewall.from_api(await self._get(f"/network/{ip_version}/firewall"))
 
     async def get_port_forwarding(self) -> list[PortForwardRule]:
@@ -398,7 +474,7 @@ class CompalClient:
     async def get_dhcp(self, ip_version: str = "ipv4") -> DhcpServer:
         """LAN DHCP server config for ``"ipv4"`` (default) or ``"ipv6"``."""
         if ip_version not in ("ipv4", "ipv6"):
-            raise CompalValidationError("ip_version must be 'ipv4' or 'ipv6'")
+            raise GatewayValidationError("ip_version must be 'ipv4' or 'ipv6'")
         return DhcpServer.from_api(await self._get(f"/network/{ip_version}/dhcp"))
 
     async def get_led(self) -> Led:

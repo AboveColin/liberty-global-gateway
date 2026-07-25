@@ -1,5 +1,5 @@
 """
-Custom exception classes for the Compal F3896LG package.
+Custom exception classes for the Liberty Global gateway package.
 
 The hierarchy lets callers (including the Home Assistant integration) tell the
 router's quirks apart: a wrong password, a lockout, the single-session "busy"
@@ -12,15 +12,15 @@ from __future__ import annotations
 from typing import Optional
 
 
-class CompalError(Exception):
-    """Base exception for all Compal F3896LG errors."""
+class GatewayError(Exception):
+    """Base exception for all Liberty Global gateway errors."""
 
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
 
 
-class CompalAPIError(CompalError):
+class GatewayAPIError(GatewayError):
     """A non-success response from the router API."""
 
     def __init__(
@@ -42,11 +42,11 @@ class CompalAPIError(CompalError):
         return f"{parts[0]} ({', '.join(parts[1:])})" if len(parts) > 1 else parts[0]
 
 
-class CompalAuthError(CompalError):
+class GatewayAuthError(GatewayError):
     """The password was rejected by the router."""
 
 
-class CompalLockoutError(CompalAuthError):
+class GatewayLockoutError(GatewayAuthError):
     """The login endpoint is locked out after too many failed attempts.
 
     ``lockout_time`` is the router-reported number of seconds remaining, when
@@ -58,19 +58,37 @@ class CompalLockoutError(CompalAuthError):
         self.lockout_time = lockout_time
 
 
-class CompalSessionBusyError(CompalError):
+class GatewaySessionBusyError(GatewayError):
     """Another session already holds the router's single login slot.
 
-    The F3896LG allows exactly one authenticated session at a time and has no
-    logout endpoint, so the slot frees only when the previous session's token
-    expires (see :data:`~compalf3896lg.constants.TOKEN_TTL`). Back off and
-    retry rather than hammering the login endpoint.
+    The gateway allows exactly one authenticated session at a time. A
+    well-behaved client releases the slot with
+    :meth:`~liberty_global_gateway.client.LibertyGatewayClient.logout`; if the
+    holder went away without doing so, the slot frees only once its token
+    idles out (see :data:`~liberty_global_gateway.constants.TOKEN_TTL`). Back
+    off and retry rather than hammering the login endpoint. In practice this
+    usually just means the router's own web UI is open in a browser tab.
     """
 
 
-class CompalNetworkError(CompalError):
+class GatewayNetworkError(GatewayError):
     """Network-level errors (timeouts, connection failures, TLS)."""
 
 
-class CompalValidationError(CompalError):
+class GatewayValidationError(GatewayError):
     """Invalid arguments supplied by the caller."""
+
+
+# -- backwards compatibility --------------------------------------------------
+#
+# The package was originally released as ``compalf3896lg`` with ``Compal*``
+# exception names. Keep the old names working as aliases so existing code
+# does not break on the rename.
+
+CompalError = GatewayError
+CompalAPIError = GatewayAPIError
+CompalAuthError = GatewayAuthError
+CompalLockoutError = GatewayLockoutError
+CompalSessionBusyError = GatewaySessionBusyError
+CompalNetworkError = GatewayNetworkError
+CompalValidationError = GatewayValidationError

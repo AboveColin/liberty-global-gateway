@@ -1,5 +1,5 @@
 """
-Login / session management for the Compal F3896LG.
+Login / session management for Liberty Global cable gateways.
 
 :class:`AuthManager` owns the single bearer token the router hands out. It is
 careful about two firmware quirks:
@@ -7,7 +7,7 @@ careful about two firmware quirks:
 * **Single session.** The box permits exactly one authenticated session and has
   no logout endpoint, so a login attempt while another session is active
   returns ``503`` "A user is logged in!" (``errorCode`` 65545). That is surfaced
-  as :class:`~compalf3896lg.exceptions.CompalSessionBusyError` and is *not*
+  as :class:`~liberty_global_gateway.exceptions.GatewaySessionBusyError` and is *not*
   treated as a bad password.
 * **Lockout.** After a handful of *contiguous* wrong-password attempts the login
   endpoint locks out for a while. Before every login the manager reads the
@@ -25,10 +25,10 @@ import aiohttp
 
 from .constants import API_PATH, DEFAULT_TIMEOUT, ERR_SESSION_BUSY, USER_AGENT
 from .exceptions import (
-    CompalAuthError,
-    CompalLockoutError,
-    CompalNetworkError,
-    CompalSessionBusyError,
+    GatewayAuthError,
+    GatewayLockoutError,
+    GatewayNetworkError,
+    GatewaySessionBusyError,
 )
 
 
@@ -100,7 +100,7 @@ class AuthManager:
                 "DELETE", f"/user/{user_id}/token/{token}", auth=True
             )
             ok = status in (200, 202, 204)
-        except CompalNetworkError:
+        except GatewayNetworkError:
             # The slot will still idle-expire; nothing else to do.
             ok = False
         finally:
@@ -124,21 +124,21 @@ class AuthManager:
         except (TypeError, ValueError):
             lockout = 0
         if status >= 400:
-            raise CompalAuthError(f"could not read login status (HTTP {status})")
+            raise GatewayAuthError(f"could not read login status (HTTP {status})")
         return failures, lockout
 
     async def async_login(self, *, check_lockout: bool = True) -> str:
         """Log in and return the bearer token.
 
-        Raises :class:`CompalLockoutError` if the endpoint is currently locked,
-        :class:`CompalSessionBusyError` if another session holds the slot, and
-        :class:`CompalAuthError` if the password is rejected.
+        Raises :class:`GatewayLockoutError` if the endpoint is currently locked,
+        :class:`GatewaySessionBusyError` if another session holds the slot, and
+        :class:`GatewayAuthError` if the password is rejected.
         """
         async with self._lock:
             if check_lockout:
                 _failures, lockout = await self.async_get_lockout()
                 if lockout > 0:
-                    raise CompalLockoutError(
+                    raise GatewayLockoutError(
                         f"login is locked out for ~{lockout}s after failed attempts",
                         lockout_time=lockout,
                     )
@@ -152,20 +152,20 @@ class AuthManager:
                 created = (data or {}).get("created") or {}
                 token = created.get("token")
                 if not token:
-                    raise CompalAuthError("login succeeded but no token was returned")
+                    raise GatewayAuthError("login succeeded but no token was returned")
                 self._token = token
                 self._user_id = created.get("userId")
                 self._obtained_at = time.time()
                 return token
 
             if status == 503 or error_code == ERR_SESSION_BUSY:
-                raise CompalSessionBusyError(
+                raise GatewaySessionBusyError(
                     "another session already holds the router's single login slot; "
                     "retry after the previous session's token expires"
                 )
 
             message = (data or {}).get("message") or f"login failed (HTTP {status})"
-            raise CompalAuthError(str(message))
+            raise GatewayAuthError(str(message))
 
     async def _request(self, method: str, path: str, *, auth: bool, json=None):
         """Low-level request returning ``(status, parsed_json_or_None)``."""
@@ -187,6 +187,6 @@ class AuthManager:
                     data = None
                 return resp.status, data
         except asyncio.TimeoutError as err:
-            raise CompalNetworkError(f"request to {path} timed out") from err
+            raise GatewayNetworkError(f"request to {path} timed out") from err
         except aiohttp.ClientError as err:
-            raise CompalNetworkError(f"request to {path} failed: {err}") from err
+            raise GatewayNetworkError(f"request to {path} failed: {err}") from err

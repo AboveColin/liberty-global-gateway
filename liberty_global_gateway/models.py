@@ -1,5 +1,5 @@
 """
-Typed models for the Compal F3896LG API.
+Typed models for the Liberty Global gateway API.
 
 Each model exposes a ``from_api`` classmethod that maps the raw JSON the router
 returns into a stable, documented shape. The original payload is kept on
@@ -43,6 +43,73 @@ def _bool(value: Any) -> Optional[bool]:
         if low in ("false", "0", "no", "down", "disabled"):
             return False
     return None
+
+
+@dataclass
+class Localization:
+    """Operator branding and model identification (``/system/localization``).
+
+    Unlike every other endpoint, this one answers without authentication,
+    which makes it the cheapest way to positively identify a gateway --
+    useful for discovery, before any password is asked for.
+    """
+
+    skin: Optional[str]
+    """Operator identifier, e.g. ``"ziggo"``. See
+    :data:`~liberty_global_gateway.constants.KNOWN_SKINS`."""
+
+    product_name: Optional[str]
+    """The operator's marketing name, e.g. ``"SmartWifi modem"``."""
+
+    model_name: Optional[str]
+    """Hardware model, e.g. ``"F3896LG"``. See
+    :data:`~liberty_global_gateway.constants.KNOWN_MODELS`."""
+
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> "Localization":
+        """Build from a ``/system/localization`` payload."""
+        loc = (payload or {}).get("localization") or {}
+        return cls(
+            skin=loc.get("skin"),
+            product_name=loc.get("productName"),
+            model_name=loc.get("modelName"),
+            raw=payload or {},
+        )
+
+    @property
+    def brand(self) -> Optional[str]:
+        """The operator's display name, e.g. ``"Ziggo"``.
+
+        Falls back to a title-cased version of :attr:`skin` for operators the
+        shipped table does not know about yet.
+        """
+        if not self.skin:
+            return None
+        from .constants import KNOWN_SKINS  # local import: avoids a cycle
+
+        return KNOWN_SKINS.get(self.skin, self.skin.replace("_", " ").title())
+
+    @property
+    def generation(self) -> Optional[str]:
+        """Hardware generation (``mv1``/``mv2+``/``mv3``), if the model is known."""
+        if not self.model_name:
+            return None
+        from .constants import KNOWN_MODELS  # local import: avoids a cycle
+
+        return KNOWN_MODELS.get(self.model_name.upper())
+
+    @property
+    def display_name(self) -> str:
+        """A human-friendly device name, e.g. ``"Ziggo SmartWifi modem (F3896LG)"``.
+
+        Degrades gracefully when the router omits any of the three fields.
+        """
+        head = " ".join(p for p in (self.brand, self.product_name) if p)
+        if not head:
+            head = "Liberty Global Cable Gateway"
+        return f"{head} ({self.model_name})" if self.model_name else head
 
 
 @dataclass
