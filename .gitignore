@@ -1,19 +1,19 @@
+
 __pycache__/
-*.py[cod]
-*.egg-info/
-build/
-dist/
-*.whl
-
-.venv/
-venv/
-.mypy_cache/
-.pytest_cache/
+.coverage
 .DS_Store
-
-# Never commit router credentials or captured responses
 .env
 .env.*
+.mypy_cache/
+.pytest_cache/
+.venv/
+*.egg-info/
 *.local
+*.py[cod]
+*.whl
+# Never commit router credentials or captured responses
+build/
 compal_*.json
+dist/
 probe_out*.txt
+venv/
