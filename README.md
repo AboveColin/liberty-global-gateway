@@ -155,6 +155,13 @@ The old names are re-exported as aliases (`CompalClient`, `CompalError`, `Compal
 - **`/network/ipv4/info`** returns the **LAN** address/subnet; for the public WAN address use `get_provisioning()` (`/system/gateway/provisioning`).
 - **Errors:** the package raises `GatewayAuthError` (wrong password), `GatewayLockoutError` (login locked out), `GatewaySessionBusyError` (another session active), `GatewayAPIError` (bad response, carries `status_code`/`error_code`), `GatewayNetworkError` (timeout/connection/TLS) and `GatewayValidationError` (bad arguments) — all subclasses of `GatewayError`.
 
+## Supporting the project
+
+This project is free and stays free. If it is useful to you, you can support its
+development through [GitHub Sponsors](https://github.com/sponsors/AboveColin).
+Sponsorship is voluntary and unlocks nothing: every feature, fix and security
+update ships in the public release.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
