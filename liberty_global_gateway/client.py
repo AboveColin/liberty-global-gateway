@@ -535,5 +535,9 @@ class LibertyGatewayClient:
 
         This drops the WAN connection for a minute or two. It is a deliberate,
         destructive action — call it only on explicit user intent.
+
+        The F3896LG firmware does not reboot on a bodyless POST. The web UI
+        sends ``{"reboot": {"enable": true}}`` and the gateway answers
+        ``202 {"accepted": true}``.
         """
-        await self._post("/system/reboot")
+        await self._post("/system/reboot", {"reboot": {"enable": True}})
