@@ -400,6 +400,16 @@ class TestWrites:
         await client.reboot()
         assert "/rest/v1/system/reboot" in api.paths("POST")
 
+    async def test_the_reboot_body_enables_the_reboot(
+        self, api: FakeGateway, client: LibertyGatewayClient
+    ) -> None:
+        # A bodyless POST does not reboot the F3896LG (issue #8). Its web UI
+        # sends exactly this body and gets 202 {"accepted": true}.
+        api.json("/system/reboot", {"accepted": True}, status=202, method="POST")
+        await client.reboot()
+        assert api.bodies[-1] == {"reboot": {"enable": True}}
+        assert api.requests[-1].content_type == "application/json"
+
     async def test_a_rejected_write_is_an_api_error(
         self, api: FakeGateway, client: LibertyGatewayClient
     ) -> None:
