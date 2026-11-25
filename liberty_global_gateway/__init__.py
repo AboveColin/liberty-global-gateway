@@ -93,7 +93,7 @@ from .models import (
 #: Pre-rename alias for :class:`LibertyGatewayClient`.
 CompalClient = LibertyGatewayClient
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 __all__ = [
     # Main client
