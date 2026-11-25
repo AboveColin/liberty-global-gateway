@@ -6,7 +6,7 @@ from setuptools import setup
 
 setup(
     name="liberty-global-gateway",
-    version="2.0.0",
+    version="2.0.1",
     description=(
         "An unofficial async Python client for Liberty Global cable gateways "
         "(Ziggo SmartWifi, UPC Connect Box, Virgin Media Hub, Sunrise, "
